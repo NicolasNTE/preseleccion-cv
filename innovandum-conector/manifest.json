@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Innovandum RRHH · Conector",
+  "version": "0.1.0",
+  "description": "Descarga los CV de una convocatoria desde la plataforma de empleo (con tu sesión iniciada) y los envía al portal de preselección de Innovandum.",
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["scripting"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "https://ats.pandape.com/*",
+    "https://s3.amazonaws.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/*", "https://*.netlify.app/*"],
+      "js": ["puente.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

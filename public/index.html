@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Innovandum · Preselección de candidatos</title>
+  <meta name="description" content="Preselección asistida de candidatos: carga los CV exportados de Pandapé y obtén el Top 5 por vacante.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <!-- Lectura de Word (.docx) y archivos .zip -->
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <div id="banner-local" class="banner" hidden>
+    <strong>Modo demostración local.</strong> Los datos se guardan solo en este navegador.
+    Configura Firebase en <code>js/config.js</code> para usar la base de datos real.
+  </div>
+
+  <!-- ============ LOGIN ============ -->
+  <section id="view-login" class="login" hidden>
+    <form id="form-login" class="login-card">
+      <div class="brand brand--lg"><span class="brand-mark">IN</span><span>Innovandum <small>RRHH</small></span></div>
+      <h1>Preselección de candidatos</h1>
+      <p class="muted">Ingresa con la cuenta que te asignó el administrador.</p>
+      <label>Correo
+        <input type="email" id="login-email" autocomplete="username" required>
+      </label>
+      <label>Contraseña
+        <input type="password" id="login-password" autocomplete="current-password" required>
+      </label>
+      <p id="login-error" class="error" hidden></p>
+      <button type="submit" class="btn btn-primary btn-block">Ingresar</button>
+      <button type="button" id="btn-reset" class="btn-link">Olvidé mi contraseña</button>
+    </form>
+  </section>
+
+  <!-- ============ APP ============ -->
+  <div id="view-app" hidden>
+    <header class="topbar">
+      <button id="btn-menu" class="icon-btn only-mobile" aria-label="Abrir convocatorias">☰</button>
+      <div class="brand"><span class="brand-mark">IN</span><span>Innovandum <small>Preselección</small></span></div>
+      <div class="topbar-right">
+        <span id="user-email" class="muted"></span>
+        <button id="btn-logout" class="btn btn-ghost btn-sm">Salir</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside id="sidebar" class="sidebar">
+        <button id="btn-analizar" class="btn btn-primary btn-block">🤖 Analizar convocatoria</button>
+        <button id="btn-nueva" class="btn btn-ghost btn-block">+ Nueva (carga manual)</button>
+        <h2 class="sidebar-title">Convocatorias</h2>
+        <ul id="lista-convocatorias" class="conv-list"></ul>
+      </aside>
+
+      <main class="main">
+        <!-- Estado vacío -->
+        <section id="empty-state" class="empty">
+          <h1>Encuentra a tus mejores candidatos</h1>
+          <p class="muted">Presiona <strong>Analizar convocatoria</strong>: el conector trae los CV directamente desde la plataforma de empleo (con tu sesión iniciada) y la IA los ordena según tus criterios. También puedes cargar los CV a mano.</p>
+          <ol class="howto">
+            <li><span>1</span>Abre la plataforma de empleo en otra pestaña e inicia sesión.</li>
+            <li><span>2</span>Presiona Analizar convocatoria y elige la convocatoria.</li>
+            <li><span>3</span>Define los requisitos y su peso, y obtén el ranking con su justificación.</li>
+          </ol>
+          <div class="row-gap" style="justify-content:center">
+            <button class="btn btn-primary" data-action="analizar">🤖 Analizar convocatoria</button>
+            <button class="btn btn-ghost" data-action="nueva">Carga manual</button>
+          </div>
+        </section>
+
+        <!-- Convocatoria -->
+        <section id="convocatoria" hidden>
+          <div class="conv-header">
+            <div>
+              <h1 id="conv-titulo"></h1>
+              <p id="conv-meta" class="muted"></p>
+            </div>
+            <button id="btn-eliminar-conv" class="btn btn-ghost btn-sm btn-danger-text">Eliminar convocatoria</button>
+          </div>
+
+          <nav class="tabs" role="tablist">
+            <button role="tab" data-tab="requisitos" class="tab active">1. Requisitos</button>
+            <button role="tab" data-tab="cargar" class="tab">2. Cargar CV</button>
+            <button role="tab" data-tab="resultados" class="tab">3. Resultados <span id="badge-resultados" class="pill" hidden></span></button>
+          </nav>
+
+          <!-- ---------- Requisitos ---------- -->
+          <div class="panel" data-panel="requisitos">
+            <form id="form-requisitos" class="card">
+              <div class="grid-2">
+                <label>Puesto
+                  <input id="req-titulo" required placeholder="Ej. Asistente administrativo">
+                </label>
+                <label>Área solicitante
+                  <input id="req-area" placeholder="Ej. Administración y finanzas">
+                </label>
+              </div>
+              <label>Descripción del puesto
+                <textarea id="req-descripcion" rows="5" placeholder="Pega aquí el aviso publicado en Pandapé (funciones, requisitos, condiciones)."></textarea>
+              </label>
+              <div class="row-between">
+                <h3>Criterios de evaluación</h3>
+                <button type="button" id="btn-sugerir" class="btn btn-ghost btn-sm">✨ Sugerir criterios desde la descripción</button>
+              </div>
+              <p class="muted small">Cada CV se evalúa contra estos criterios: <em>cumple</em> = 100 %, <em>parcial</em> = 50 %, <em>no cumple</em> = 0 %, ponderado por el peso. Un candidato que no cumple un criterio <strong>obligatorio</strong> queda por debajo de los que sí lo cumplen.</p>
+              <div class="table-wrap">
+                <table class="criterios">
+                  <thead>
+                    <tr><th>Criterio</th><th>Tipo</th><th>Peso</th><th>Palabras clave <span class="muted">(opcional, prefiltro)</span></th><th></th></tr>
+                  </thead>
+                  <tbody id="tbody-criterios"></tbody>
+                </table>
+              </div>
+              <button type="button" id="btn-add-criterio" class="btn btn-ghost btn-sm">+ Agregar criterio</button>
+              <div class="form-actions">
+                <span id="req-estado" class="muted small"></span>
+                <button type="submit" class="btn btn-primary">Guardar requisitos</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- ---------- Cargar ---------- -->
+          <div class="panel" data-panel="cargar" hidden>
+            <div class="card">
+              <h3>Exporta los CV desde Pandapé</h3>
+              <ol class="steps">
+                <li>Abre la convocatoria en Pandapé y marca <strong>Seleccionar todos</strong>.</li>
+                <li>Entra en <strong>Acciones → Exportar CV</strong> y descarga el archivo.</li>
+                <li>Arrástralo aquí (acepta .zip, .pdf, .docx y .txt; puedes soltar varios a la vez).</li>
+              </ol>
+              <label id="dropzone" class="dropzone" tabindex="0">
+                <input type="file" id="input-archivos" multiple accept=".zip,.pdf,.docx,.txt" hidden>
+                <span class="dropzone-icon">⬆</span>
+                <strong>Arrastra los archivos o haz clic para elegirlos</strong>
+                <span class="muted small">Los archivos se leen en tu navegador. Solo se guarda el texto extraído.</span>
+              </label>
+              <ul id="lista-archivos" class="file-list"></ul>
+            </div>
+
+            <div class="card">
+              <div class="grid-2 align-end">
+                <label>Analizar con IA
+                  <select id="sel-limite-ia">
+                    <option value="20">Los 20 mejores del prefiltro</option>
+                    <option value="50" selected>Los 50 mejores del prefiltro</option>
+                    <option value="100">Los 100 mejores del prefiltro</option>
+                    <option value="0">Todos los CV</option>
+                  </select>
+                </label>
+                <button id="btn-buscar" class="btn btn-primary btn-lg">🔎 Buscar candidato</button>
+              </div>
+              <p class="muted small">El prefiltro por palabras clave ordena todos los CV al instante; la IA lee en detalle solo los que elijas, para ahorrar tiempo y costo. Los CV ya analizados con los mismos criterios no se vuelven a enviar.</p>
+              <div id="progreso" class="progress-box" hidden>
+                <div class="progress-label"><span id="progreso-texto">Preparando…</span><span id="progreso-num"></span></div>
+                <div class="progress"><div id="progreso-barra" class="progress-bar"></div></div>
+                <button id="btn-cancelar" class="btn btn-ghost btn-sm">Detener</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ---------- Resultados ---------- -->
+          <div class="panel" data-panel="resultados" hidden>
+            <div id="resumen" class="stats"></div>
+            <div id="aviso-resultados" class="notice" hidden></div>
+            <div class="row-between">
+              <h2>Top 5</h2>
+              <div class="row-gap">
+                <button id="btn-reanalizar" class="btn btn-ghost btn-sm" title="Vuelve a enviar a la IA los CV guardados con los criterios actuales">↻ Reanalizar</button>
+                <button id="btn-exportar" class="btn btn-ghost btn-sm">⬇ Exportar CSV</button>
+              </div>
+            </div>
+            <div id="top5" class="top5"></div>
+
+            <div class="row-between mt">
+              <h2>Todos los candidatos</h2>
+              <div class="row-gap">
+                <input id="filtro-texto" type="search" placeholder="Buscar por nombre o archivo">
+                <label class="check"><input type="checkbox" id="filtro-obligatorios"> Solo cumplen obligatorios</label>
+              </div>
+            </div>
+            <div class="table-wrap card no-pad">
+              <table class="tabla-candidatos">
+                <thead>
+                  <tr><th>#</th><th>Candidato</th><th>Puntaje</th><th>Obligatorios</th><th>Experiencia</th><th>Fuente</th><th>Decisión</th><th></th></tr>
+                </thead>
+                <tbody id="tbody-candidatos"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Detalle de candidato -->
+  <dialog id="dlg-detalle" class="dialog">
+    <div class="dialog-head">
+      <h2 id="det-nombre"></h2>
+      <button class="icon-btn" data-close aria-label="Cerrar">✕</button>
+    </div>
+    <div id="det-cuerpo" class="dialog-body"></div>
+  </dialog>
+
+  <!-- Analizar convocatoria (conector) -->
+  <dialog id="dlg-conector" class="dialog">
+    <div class="dialog-head">
+      <h2>Analizar convocatoria</h2>
+      <button class="icon-btn" data-close aria-label="Cerrar">✕</button>
+    </div>
+    <div id="con-cuerpo" class="dialog-body"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <template id="tpl-criterio">
+    <tr>
+      <td><input class="c-desc" placeholder="Ej. Al menos 2 años en puestos administrativos" required></td>
+      <td>
+        <select class="c-tipo">
+          <option value="obligatorio">Obligatorio</option>
+          <option value="deseable">Deseable</option>
+        </select>
+      </td>
+      <td>
+        <select class="c-peso">
+          <option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option>
+        </select>
+      </td>
+      <td><input class="c-claves" placeholder="excel, hojas de cálculo"></td>
+      <td><button type="button" class="icon-btn c-quitar" aria-label="Quitar criterio">✕</button></td>
+    </tr>
+  </template>
+</body>
+</html>
